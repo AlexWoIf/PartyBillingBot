@@ -21,10 +21,19 @@ class Status(Enum):
 def start(update, context):
     logger.debug(f'Enter cmd_start: {update=}')
 
+    user_id = update.message.from_user.id
+    username = update.message.from_user['username']
+    firstname = update.message.from_user['first_name']
+    lastname = update.message.from_user['last_name']
+
+    orders = context.bot_data['party']['orders']
+    orders[(user_id, username, firstname, lastname)] = []
+
+    date = context.bot_data['party']['data'].get('date', '')
+    place = context.bot_data['party']['data'].get('place', '')
     text = 'Привет!\n' \
            'Я учитываю заказы нашей компании на вечеринке ' \
-           f'{datetime.date.today():%d %B %Y} ' \
-           'в <party-place>\nНапиши мне примерное название того что ты ' \
+           f'{date} в {place}\nНапиши мне примерное название того что ты ' \
            'хочешь заказать'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                              reply_markup=ReplyKeyboardRemove(), )
@@ -51,7 +60,7 @@ def get_cost(update, context):
         return Status.GET_COST
     item = context.user_data['item']
     cost = update.message.text
-    context.user_data['cost'] = cost
+    context.user_data['cost'] = int(cost)
     text = f'Давай проверим:\nТы заказал: {item}\nСтоимость:\n{cost}руб.\n' \
            'Нажми "Да", если все верно, или "Нет", если хочешь прислать ' \
            'заказ заново'
@@ -72,9 +81,14 @@ def confirm_choice(update, context):
            'Если захочешь добавить что-то еще, то опять присылай название.'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                              reply_markup=ReplyKeyboardRemove(), )
+    user_id = update.message.from_user.id
     username = update.message.from_user['username']
     firstname = update.message.from_user['first_name']
     lastname = update.message.from_user['last_name']
+
+    orders = context.bot_data['party']['orders']
+    user_orders = orders.get((user_id, username, firstname, lastname), [])
+    user_orders.append((item, cost))
 
     summary_name = f'{firstname} ' if firstname else ''
     summary_name += f'{lastname}' if lastname else ''
@@ -95,6 +109,27 @@ def decline_choice(update, context):
     return Status.GET_ITEM
 
 
+def adm_total(update, context):
+    orders = context.bot_data['party']['orders']
+    total = 0
+    text = ''
+    for order in orders:
+        _, username, firstname, lastname = order
+        summary_name = f'{firstname} ' if firstname else ''
+        summary_name += f'{lastname}' if lastname else ''
+        summary_name += f'(@{username})' if username else ''
+        text += f'Пользователь {summary_name}:\n'
+        items = orders[order]
+        subtotal = 0
+        for (item, cost) in items:
+            text += f'\t{item} - {cost}руб.\n'
+            subtotal += cost
+        text += f'User total: {subtotal}руб.'
+        total += subtotal
+        update.message.reply_text(text)
+    update.message.reply(f'Общая сумма за вечер: {total}руб.')
+
+
 if __name__ == '__main__':
     load_dotenv()
     tg_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -104,8 +139,15 @@ if __name__ == '__main__':
     updater = Updater(tg_token)
     dispatcher = updater.dispatcher
 
-    admin_chat_id = os.getenv('TG_ADMIN_CHAT')
+    admin_chat_id = int(os.getenv('TG_ADMIN_CHAT'))
     dispatcher.bot_data['admin_chat_id'] = admin_chat_id
+    dispatcher.bot_data['party'] = {
+        'data': {
+            'date': '09 Марта 2024г.',
+            'place': 'баре Freedom',
+        },
+        'orders': {},
+    }
     user_conversation = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -123,6 +165,9 @@ if __name__ == '__main__':
         fallbacks=[],
         name='party_billing_conversation',
         # persistent=True,
+    )
+    dispatcher.add_handler(
+        CommandHandler('total', adm_total, Filters.chat(admin_chat_id))
     )
     dispatcher.add_handler(user_conversation)
     updater.start_polling()
