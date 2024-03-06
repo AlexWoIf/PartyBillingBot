@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+import re
 from enum import Enum
 
 from dotenv import load_dotenv
@@ -44,10 +45,14 @@ def get_item(update, context):
 def get_cost(update, context):
     logger.debug(f'Enter save_cost: {update=}')
 
+    if re.search(r'[^0-9]', update.message.text):
+        text = 'Введите просто цифры! Без посторонних символов!'
+        context.bot.send_message(chat_id=update.effective_chat.id, text=text, )
+        return Status.GET_COST
     item = context.user_data['item']
     cost = update.message.text
     context.user_data['cost'] = cost
-    text = f'Ок. Ты заказал:\n{item}\nСтоимость:\n{cost}\n' \
+    text = f'Давай проверим:\nТы заказал: {item}\nСтоимость:\n{cost}руб.\n' \
            'Нажми "Да", если все верно, или "Нет", если хочешь прислать ' \
            'заказ заново'
     keyboard = [['Да', 'Нет'],]
@@ -67,6 +72,17 @@ def confirm_choice(update, context):
            'Если захочешь добавить что-то еще, то опять присылай название.'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                              reply_markup=ReplyKeyboardRemove(), )
+    username = update.message.from_user['username']
+    firstname = update.message.from_user['first_name']
+    lastname = update.message.from_user['last_name']
+
+    summary_name = f'{firstname} ' if firstname else ''
+    summary_name += f'{lastname}' if lastname else ''
+    summary_name += f'(@{username})' if username else ''
+    text = f'Пользователь {summary_name}:\n' \
+           f'{item} - {cost}руб.'
+    context.bot.send_message(chat_id=context.bot_data['admin_chat_id'],
+                             text=text, )
     return Status.GET_ITEM
 
 
@@ -87,7 +103,10 @@ if __name__ == '__main__':
 
     updater = Updater(tg_token)
     dispatcher = updater.dispatcher
-    conversation = ConversationHandler(
+
+    admin_chat_id = os.getenv('TG_ADMIN_CHAT')
+    dispatcher.bot_data['admin_chat_id'] = admin_chat_id
+    user_conversation = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             Status.GET_ITEM: [
@@ -105,6 +124,6 @@ if __name__ == '__main__':
         name='party_billing_conversation',
         # persistent=True,
     )
-    dispatcher.add_handler(conversation)
+    dispatcher.add_handler(user_conversation)
     updater.start_polling()
     updater.idle()
