@@ -112,22 +112,22 @@ def decline_choice(update, context):
 def adm_total(update, context):
     orders = context.bot_data['party']['orders']
     total = 0
-    text = ''
     for order in orders:
+        text = ''
         _, username, firstname, lastname = order
         summary_name = f'{firstname} ' if firstname else ''
         summary_name += f'{lastname}' if lastname else ''
         summary_name += f'(@{username})' if username else ''
-        text += f'Пользователь {summary_name}:\n'
+        text += f'Гость {summary_name}:\n'
         items = orders[order]
         subtotal = 0
         for (item, cost) in items:
             text += f'\t{item} - {cost}руб.\n'
             subtotal += cost
-        text += f'User total: {subtotal}руб.'
+        text += f'User total: {subtotal}руб.\n'
         total += subtotal
         update.message.reply_text(text)
-    update.message.reply(f'Общая сумма за вечер: {total}руб.')
+    update.message.reply_text(f'Общая сумма за вечер: {total}руб.')
 
 
 if __name__ == '__main__':
