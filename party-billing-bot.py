@@ -18,6 +18,18 @@ class Status(Enum):
     GET_CHECK = 2
 
 
+def help(update, context):
+    logger.debug(f'Enter introduce: {update=}')
+
+    date = context.bot_data['party']['data'].get('date', '')
+    place = context.bot_data['party']['data'].get('place', '')
+    text = 'Привет!\n' \
+           'Я учитываю заказы нашей компании на вечеринке ' \
+           f'{date} в {place}\nЕсли ты участник этой вечеринки, то пришли ' \
+           'комманду /start'
+    update.message.reply_text(text)
+
+
 def start(update, context):
     logger.debug(f'Enter cmd_start: {update=}')
 
@@ -31,10 +43,11 @@ def start(update, context):
 
     date = context.bot_data['party']['data'].get('date', '')
     place = context.bot_data['party']['data'].get('place', '')
-    text = 'Привет!\n' \
-           'Я учитываю заказы нашей компании на вечеринке ' \
-           f'{date} в {place}\nНапиши мне примерное название того что ты ' \
-           'хочешь заказать'
+    text = 'Отлично, что ты решил к нам присоединиться!\n' \
+           f'Я учитываю заказы нашей компании {date} в {place}\n' \
+           'Присылай мне сообщение каждый раз, когда ты делаешь заказ, и в ' \
+           'конце вечера я пришлю тебе твой счет.\n' \
+           'Напиши мне примерное название того что ты хочешь заказать:'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                              reply_markup=ReplyKeyboardRemove(), )
     return Status.GET_ITEM
@@ -46,7 +59,7 @@ def get_item(update, context):
     item = update.message.text
     context.user_data['item'] = item
     text = f'Ты заказал:\n{item}\nНапиши стоимость, ' \
-           'чтобы мы потом правильно раделили итоговый счет на всех.'
+           'чтобы мы потом правильно разделили итоговый счет на всех.'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text)
     return Status.GET_COST
 
@@ -170,5 +183,8 @@ if __name__ == '__main__':
         CommandHandler('total', adm_total, Filters.chat(admin_chat_id))
     )
     dispatcher.add_handler(user_conversation)
+    dispatcher.add_handler(
+        MessageHandler(~Filters.chat(admin_chat_id), help)
+    )
     updater.start_polling()
     updater.idle()
