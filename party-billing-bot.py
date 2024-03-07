@@ -1,18 +1,19 @@
-import datetime
 import logging
 import os
 import re
 from enum import Enum
 
 from dotenv import load_dotenv
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (CommandHandler, ConversationHandler, Filters,
-                          MessageHandler, Updater)
+from telegram import (InlineKeyboardButton, InlineKeyboardMarkup,
+                      ReplyKeyboardMarkup, ReplyKeyboardRemove)
+from telegram.ext import (CallbackQueryHandler, CommandHandler,
+                          ConversationHandler, Filters, MessageHandler,
+                          Updater)
 
 logger = logging.getLogger(__file__)
 
 
-class Status(Enum):
+class ConversationStatus(Enum):
     GET_ITEM = 0
     GET_COST = 1
     GET_CHECK = 2
@@ -38,8 +39,11 @@ def start(update, context):
     firstname = update.message.from_user['first_name']
     lastname = update.message.from_user['last_name']
 
-    orders = context.bot_data['party']['orders']
-    orders[(user_id, username, firstname, lastname)] = []
+    guests = context.bot_data['party']['guests']
+    guests[user_id] = {'name': (username, firstname, lastname),
+                       'bill_sent': False,
+                       'bill_payd': False,
+                       'orders': [], }
 
     date = context.bot_data['party']['data'].get('date', '')
     place = context.bot_data['party']['data'].get('place', '')
@@ -50,7 +54,7 @@ def start(update, context):
            'Напиши мне примерное название того что ты хочешь заказать:'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                              reply_markup=ReplyKeyboardRemove(), )
-    return Status.GET_ITEM
+    return ConversationStatus.GET_ITEM
 
 
 def get_item(update, context):
@@ -61,7 +65,7 @@ def get_item(update, context):
     text = f'Ты заказал:\n{item}\nНапиши стоимость, ' \
            'чтобы мы потом правильно разделили итоговый счет на всех.'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text)
-    return Status.GET_COST
+    return ConversationStatus.GET_COST
 
 
 def get_cost(update, context):
@@ -70,7 +74,7 @@ def get_cost(update, context):
     if re.search(r'[^0-9]', update.message.text):
         text = 'Введите просто цифры! Без посторонних символов!'
         context.bot.send_message(chat_id=update.effective_chat.id, text=text, )
-        return Status.GET_COST
+        return ConversationStatus.GET_COST
     item = context.user_data['item']
     cost = update.message.text
     context.user_data['cost'] = int(cost)
@@ -81,7 +85,7 @@ def get_cost(update, context):
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True)
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                              reply_markup=reply_markup, )
-    return Status.GET_CHECK
+    return ConversationStatus.GET_CHECK
 
 
 def confirm_choice(update, context):
@@ -99,9 +103,9 @@ def confirm_choice(update, context):
     firstname = update.message.from_user['first_name']
     lastname = update.message.from_user['last_name']
 
-    orders = context.bot_data['party']['orders']
-    user_orders = orders.get((user_id, username, firstname, lastname), [])
-    user_orders.append((item, cost))
+    guests = context.bot_data['party']['guests']
+    user = guests.get(user_id)
+    user['orders'].append((item, cost))
 
     summary_name = f'{firstname} ' if firstname else ''
     summary_name += f'{lastname}' if lastname else ''
@@ -110,7 +114,7 @@ def confirm_choice(update, context):
            f'{item} - {cost}руб.'
     context.bot.send_message(chat_id=context.bot_data['admin_chat_id'],
                              text=text, )
-    return Status.GET_ITEM
+    return ConversationStatus.GET_ITEM
 
 
 def decline_choice(update, context):
@@ -119,28 +123,59 @@ def decline_choice(update, context):
     text = 'Ок. Отменяем. Попробуй ввести название заново.'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                              reply_markup=ReplyKeyboardRemove(), )
-    return Status.GET_ITEM
+    return ConversationStatus.GET_ITEM
 
 
 def adm_total(update, context):
-    orders = context.bot_data['party']['orders']
+    guests = context.bot_data['party']['guests']
     total = 0
-    for order in orders:
+    for user_id, guest in guests.items():
         text = ''
-        _, username, firstname, lastname = order
+        username, firstname, lastname = guest['name']
         summary_name = f'{firstname} ' if firstname else ''
         summary_name += f'{lastname}' if lastname else ''
         summary_name += f'(@{username})' if username else ''
         text += f'Гость {summary_name}:\n'
-        items = orders[order]
+        items = guest['orders']
         subtotal = 0
         for (item, cost) in items:
             text += f'\t{item} - {cost}руб.\n'
             subtotal += cost
         text += f'User total: {subtotal}руб.\n'
         total += subtotal
-        update.message.reply_text(text)
+        negate_payd = '' if guest['bill_payd'] else 'не '
+        text += f'Счет {negate_payd}оплачен.\n'
+        if not guest['bill_payd']:
+            negate_sent = '' if guest['bill_sent'] else 'не '
+            text += f'Счет {negate_sent}отправлен.\n'
+        keyboard = [
+            [InlineKeyboardButton('✉ Отправить счет 🧾',
+                                  callback_data=f'sendbill:{user_id}')],
+            [InlineKeyboardButton('✅ Отметить оплату 💰',
+                                  callback_data=f'closebill:{user_id}')],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        update.message.reply_text(text, reply_markup=reply_markup)
     update.message.reply_text(f'Общая сумма за вечер: {total}руб.')
+
+
+def send_bill(update, context):
+    user_id = int(update.callback_query.data.split(':')[1])
+    guest = context.bot_data['party']['guests'][user_id]
+    guest['bill_sent'] = True
+    text = re.sub(r'не отправлен', r'отправлен',
+                  update.callback_query.message.text)
+    context.bot.send_message(chat_id=user_id, text=text)
+    update.callback_query.edit_message_text(text)
+
+
+def close_bill(update, context):
+    user_id = int(update.callback_query.data.split(':')[1])
+    guest = context.bot_data['party']['guests'][user_id]
+    guest['bill_payd'] = True
+    text = re.sub(r'не оплачен', r'оплачен',
+                  update.callback_query.message.text)
+    update.callback_query.edit_message_text(text, reply_markup=None)
 
 
 if __name__ == '__main__':
@@ -158,19 +193,21 @@ if __name__ == '__main__':
         'data': {
             'date': '09 Марта 2024г.',
             'place': 'баре Freedom',
+            'status': 'in progress'
         },
-        'orders': {},
+        'guests': {},
     }
     user_conversation = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[CommandHandler('start', start),
+                      MessageHandler(~Filters.chat(admin_chat_id), help), ],
         states={
-            Status.GET_ITEM: [
+            ConversationStatus.GET_ITEM: [
                 MessageHandler(Filters.text, get_item),
             ],
-            Status.GET_COST: [
+            ConversationStatus.GET_COST: [
                 MessageHandler(Filters.text, get_cost),
             ],
-            Status.GET_CHECK: [
+            ConversationStatus.GET_CHECK: [
                 MessageHandler(Filters.text('Да'), confirm_choice),
                 MessageHandler(Filters.text('Нет'), decline_choice),
             ],
@@ -182,9 +219,13 @@ if __name__ == '__main__':
     dispatcher.add_handler(
         CommandHandler('total', adm_total, Filters.chat(admin_chat_id))
     )
-    dispatcher.add_handler(user_conversation)
     dispatcher.add_handler(
-        MessageHandler(~Filters.chat(admin_chat_id), help)
+        CallbackQueryHandler(send_bill, pattern=r'^sendbill:\d+$')
     )
+    dispatcher.add_handler(
+        CallbackQueryHandler(close_bill, pattern=r'^closebill:\d+$')
+    )
+    dispatcher.add_handler(user_conversation)
+
     updater.start_polling()
     updater.idle()
