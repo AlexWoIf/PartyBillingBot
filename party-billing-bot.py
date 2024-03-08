@@ -276,7 +276,7 @@ def adm_close_bill(update, context):
 
 
 if __name__ == '__main__':
-    load_dotenv()
+    load_dotenv(override=True)
     tg_token = os.getenv('TELEGRAM_BOT_TOKEN')
     loglevel = os.getenv('LOG_LEVEL', default='INFO')
     logging.basicConfig(level=loglevel,
@@ -286,9 +286,14 @@ if __name__ == '__main__':
     redis_host = os.getenv('REDIS_HOST')
     redis_port = os.getenv('REDIS_PORT')
     redis_password = os.getenv('REDIS_PASSWORD')
+
     redis_storage = redis.Redis(host=redis_host, port=redis_port,
                                 password=redis_password)
-    persistence = RedisPersistence(redis_storage)
+    try:
+        redis_storage.ping()
+        persistence = RedisPersistence(redis_storage)
+    except redis.ConnectionError:
+        persistence = False
 
     updater = Updater(tg_token, persistence=persistence)
     dispatcher = updater.dispatcher
@@ -334,7 +339,7 @@ if __name__ == '__main__':
         },
         fallbacks=[],
         name='party_billing_conversation',
-        persistent=True,
+        persistent=persistence,
     )
     dispatcher.add_handler(user_conversation)
 
