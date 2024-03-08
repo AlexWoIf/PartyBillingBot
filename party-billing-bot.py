@@ -25,6 +25,38 @@ class ConversationStatus(Enum):
     ADM_COMMANDS = 100
 
 
+def get_user_bill(update, context, user_id):
+    guest = context.bot_data['party']['guests'][user_id]
+    text = ''
+    username, firstname, lastname = guest['name']
+    summary_name = f'{firstname} ' if firstname else ''
+    summary_name += f'{lastname}' if lastname else ''
+    summary_name += f'(@{username})' if username else ''
+    text += f'Гость {summary_name}:\n'
+    items = guest['orders']
+    subtotal = 0
+    for (item, cost) in items:
+        text += f'\t{item} - {cost}руб.\n'
+        subtotal += cost
+    text += f'User total: {subtotal}руб.\n'
+    negate_payd = '' if guest['bill_payd'] else 'не '
+    text += f'Счет {negate_payd}оплачен.\n'
+    reply_markup = None
+    if not guest['bill_payd']:
+        negate_sent = '' if guest['bill_sent'] else 'не '
+        text += f'Счет {negate_sent}отправлен.\n'
+        keyboard = [
+            [InlineKeyboardButton('✉ Отправить счет 🧾',
+                                    callback_data=f'sendbill:{user_id}')],
+            [InlineKeyboardButton('✅ Отметить оплату 💰',
+                                    callback_data=f'closebill:{user_id}')],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text,
+                             reply_markup=reply_markup)
+    return subtotal
+
+
 def help(update, context):
     logger.debug(f'Enter help: {update=}')
 
@@ -34,7 +66,8 @@ def help(update, context):
            'Я учитываю заказы нашей компании на вечеринке ' \
            f'{date} в {place}\nЕсли ты участник этой вечеринки, то пришли ' \
            'комманду /start'
-    update.message.reply_text(text)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+    return ConversationHandler.END
 
 
 def adm_help(update, context):
@@ -48,7 +81,7 @@ def adm_help(update, context):
            'участникам, у кого он не погашен\n' \
            '/total - выводит информацию о текущем счете всех участников\n' \
            '/party - выводит информацию о текущей вечеринке'
-    update.message.reply_text(text)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text)
     return ConversationStatus.ADM_COMMANDS
 
 
@@ -61,10 +94,11 @@ def start(update, context):
     lastname = update.message.from_user['last_name']
 
     guests = context.bot_data['party']['guests']
-    guests[user_id] = {'name': (username, firstname, lastname),
-                       'bill_sent': False,
-                       'bill_payd': False,
-                       'orders': [], }
+    if user_id not in guests:
+        guests[user_id] = {'name': (username, firstname, lastname),
+                           'bill_sent': False,
+                           'bill_payd': False,
+                           'orders': [], }
 
     date = context.bot_data['party'].get('date', '')
     place = context.bot_data['party'].get('place', '')
@@ -112,6 +146,14 @@ def get_cost(update, context):
 def confirm_choice(update, context):
     logger.debug(f'Enter confirm_choice: {update=}')
 
+    if context.bot_data['party']['status'] == 'closed':
+        text = 'К сожалению, вечеринка закончилась и новые заказы не ' \
+               'принимаются. Дождись новой вечеринки и нажми /start чтобы ' \
+               'подключиться к ней.'
+        context.bot.send_message(chat_id=update.effective_chat.id, text=text,
+                                 reply_markup=ReplyKeyboardRemove(), )
+        return ConversationHandler.END
+
     cost = context.user_data['cost']
     item = context.user_data['item']
     text = f'Спасибо, что ты заказал:\n{item}\nСтоимость:\n{cost}\n' \
@@ -152,35 +194,23 @@ def adm_total(update, context):
 
     guests = context.bot_data['party']['guests']
     total = 0
+    for user_id in guests:
+        total += get_user_bill(update, context, user_id)
+    context.bot.send_message(chat_id=update.effective_chat.id,
+                             text=f'Общая сумма за вечер: {total}руб.')
+    return ConversationStatus.ADM_COMMANDS
+
+
+def adm_debtors(update, context):
+    logger.debug(f'Enter adm_debtors: {update=}')
+
+    guests = context.bot_data['party']['guests']
+    total = 0
     for user_id, guest in guests.items():
-        text = ''
-        username, firstname, lastname = guest['name']
-        summary_name = f'{firstname} ' if firstname else ''
-        summary_name += f'{lastname}' if lastname else ''
-        summary_name += f'(@{username})' if username else ''
-        text += f'Гость {summary_name}:\n'
-        items = guest['orders']
-        subtotal = 0
-        for (item, cost) in items:
-            text += f'\t{item} - {cost}руб.\n'
-            subtotal += cost
-        text += f'User total: {subtotal}руб.\n'
-        total += subtotal
-        negate_payd = '' if guest['bill_payd'] else 'не '
-        text += f'Счет {negate_payd}оплачен.\n'
-        reply_markup = None
         if not guest['bill_payd']:
-            negate_sent = '' if guest['bill_sent'] else 'не '
-            text += f'Счет {negate_sent}отправлен.\n'
-            keyboard = [
-                [InlineKeyboardButton('✉ Отправить счет 🧾',
-                                    callback_data=f'sendbill:{user_id}')],
-                [InlineKeyboardButton('✅ Отметить оплату 💰',
-                                    callback_data=f'closebill:{user_id}')],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.reply_text(text, reply_markup=reply_markup)
-    update.message.reply_text(f'Общая сумма за вечер: {total}руб.')
+            total += get_user_bill(update, context, user_id)
+    context.bot.send_message(chat_id=update.effective_chat.id,
+                             text=f'Сумма неоплаченных счетов: {total}руб.')
     return ConversationStatus.ADM_COMMANDS
 
 
@@ -188,43 +218,17 @@ def adm_close(update, context):
     logger.debug(f'Enter adm_close: {update=}')
 
     context.bot_data['party']['status'] = 'closed'
-    guests = context.bot_data['party']['guests']
-    total = 0
-    for user_id, guest in guests.items():
-        text = ''
-        username, firstname, lastname = guest['name']
-        summary_name = f'{firstname} ' if firstname else ''
-        summary_name += f'{lastname}' if lastname else ''
-        summary_name += f'(@{username})' if username else ''
-        text += f'Гость {summary_name}:\n'
-        items = guest['orders']
-        subtotal = 0
-        for (item, cost) in items:
-            text += f'\t{item} - {cost}руб.\n'
-            subtotal += cost
-        text += f'User total: {subtotal}руб.\n'
-        total += subtotal
-        negate_payd = '' if guest['bill_payd'] else 'не '
-        text += f'Счет {negate_payd}оплачен.\n'
-        reply_markup = None
-        if not guest['bill_payd']:
-            text += 'Счет отправлен.\n'
-            context.bot.send_message(chat_id=user_id, text=text)
-            keyboard = [
-                [InlineKeyboardButton('✉ Отправить счет 🧾',
-                                      callback_data=f'sendbill:{user_id}')],
-                [InlineKeyboardButton('✅ Отметить оплату 💰',
-                                      callback_data=f'closebill:{user_id}')],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-        context.bot.send_message(chat_id=update.effective_chat.id, text=text,
-                                 reply_markup=reply_markup)
-    context.bot.send_message(chat_id=update.effective_chat.id,
-                             text=f'Общая сумма за вечер: {total}руб.')
+    text = 'Вечеринка закрыта.\nИспользуйте следующие команды:\n' \
+           '/sendbills - отправить счета всем, кто еще не оплатил\n' \
+           '/total - получить полный подсчет по всем участникам вечеринки\n' \
+           '/debtors - список тех кто еще не оплатил свой счет'
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text, )
     return ConversationStatus.ADM_COMMANDS
 
 
 def adm_start_party(update, context):
+    logger.debug(f'Enter adm_start_party: {update=}')
+
     context.bot_data['party']['status'] = 'in progress'
     context.bot_data['party']['guests'] = {}
     context.bot.send_message(chat_id=update.effective_chat.id,
@@ -233,7 +237,7 @@ def adm_start_party(update, context):
 
 
 def adm_party_info(update, context):
-    logger.debug(f'Enter adm_party: {update=}')
+    logger.debug(f'Enter adm_party_info: {update=}')
     date = context.bot_data['party']['date']
     place = context.bot_data['party']['place']
     status = context.bot_data['party']['status']
@@ -253,7 +257,8 @@ def adm_party_info(update, context):
                               callback_data='start_party')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text(text, reply_markup=reply_markup)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text,
+                             reply_markup=reply_markup)
     return ConversationStatus.ADM_COMMANDS
 
 
@@ -265,13 +270,15 @@ def adm_send_bill(update, context):
                   update.callback_query.message.text)
     keyboard = [
         [InlineKeyboardButton('✉ Отправить счет 🧾',
-                                callback_data=f'sendbill:{user_id}')],
+                              callback_data=f'sendbill:{user_id}')],
         [InlineKeyboardButton('✅ Отметить оплату 💰',
-                                callback_data=f'closebill:{user_id}')],
+                              callback_data=f'closebill:{user_id}')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    context.bot.send_message(chat_id=user_id, text=text)
     update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+
+    context.bot.send_message(chat_id=user_id, text=text)
+
     return ConversationStatus.ADM_COMMANDS
 
 
@@ -339,6 +346,8 @@ def main():
             ConversationStatus.ADM_COMMANDS: [
                 CommandHandler('total', adm_total,
                                Filters.chat(admin_chat_id)),
+                CommandHandler('debtors', adm_debtors,
+                               Filters.chat(admin_chat_id)),
                 CommandHandler('closeparty', adm_close,
                                Filters.chat(admin_chat_id)),
                 CommandHandler('party', adm_party_info,
@@ -350,7 +359,9 @@ def main():
                                      pattern=r'^closebill:\d+$'),
             ]
         },
-        fallbacks=[],
+        fallbacks=[
+            CommandHandler('stop', help, ~Filters.chat(admin_chat_id)),
+        ],
         name='party_billing_conversation',
         persistent=persistence,
     )
