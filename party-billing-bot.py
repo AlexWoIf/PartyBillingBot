@@ -17,10 +17,11 @@ class ConversationStatus(Enum):
     GET_ITEM = 0
     GET_COST = 1
     GET_CHECK = 2
+    ADM_COMMANDS = 100
 
 
 def help(update, context):
-    logger.debug(f'Enter introduce: {update=}')
+    logger.debug(f'Enter help: {update=}')
 
     date = context.bot_data['party'].get('date', '')
     place = context.bot_data['party'].get('place', '')
@@ -29,6 +30,21 @@ def help(update, context):
            f'{date} в {place}\nЕсли ты участник этой вечеринки, то пришли ' \
            'комманду /start'
     update.message.reply_text(text)
+
+
+def adm_help(update, context):
+    logger.debug(f'Enter adm_help: {update=}')
+
+    text = 'Привет!\n' \
+           'Ты находишься в административном канале где происходит ' \
+           'управление ботом.\n Бот выполняет следующие команды:\n' \
+           '/startparty - запускает прием заказов на вечеринке\n' \
+           '/closeparty - останавливает прием заказов и рассылает счет всем ' \
+           'участникам, у кого он не погашен\n' \
+           '/total - выводит информацию о текущем счете всех участников\n' \
+           '/party - выводит информацию о текущей вечеринке'
+    update.message.reply_text(text)
+    return ConversationStatus.ADM_COMMANDS
 
 
 def start(update, context):
@@ -217,6 +233,8 @@ if __name__ == '__main__':
     load_dotenv()
     tg_token = os.getenv('TELEGRAM_BOT_TOKEN')
     loglevel = os.getenv('LOG_LEVEL', default='INFO')
+    logging.basicConfig(level=loglevel,
+                        format="%(asctime)s %(levelname)s %(message)s", )
     logger.debug('Start logging')
 
     updater = Updater(tg_token)
@@ -231,8 +249,11 @@ if __name__ == '__main__':
         'guests': {},
     }
     user_conversation = ConversationHandler(
-        entry_points=[CommandHandler('start', start),
-                      MessageHandler(~Filters.chat(admin_chat_id), help), ],
+        entry_points=[
+            MessageHandler(Filters.chat(admin_chat_id), adm_help),
+            CommandHandler('start', start),
+            MessageHandler(~Filters.chat(admin_chat_id), help),
+        ],
         states={
             ConversationStatus.GET_ITEM: [
                 MessageHandler(Filters.text, get_item),
@@ -244,22 +265,18 @@ if __name__ == '__main__':
                 MessageHandler(Filters.text('Да'), confirm_choice),
                 MessageHandler(Filters.text('Нет'), decline_choice),
             ],
+            ConversationStatus.ADM_COMMANDS: [
+                CommandHandler('total', adm_total,
+                               Filters.chat(admin_chat_id)),
+                CommandHandler('closeparty', adm_close,
+                               Filters.chat(admin_chat_id)),
+                CallbackQueryHandler(send_bill, pattern=r'^sendbill:\d+$'),
+                CallbackQueryHandler(close_bill, pattern=r'^closebill:\d+$'),
+            ]
         },
         fallbacks=[],
         name='party_billing_conversation',
         # persistent=True,
-    )
-    dispatcher.add_handler(
-        CommandHandler('total', adm_total, Filters.chat(admin_chat_id))
-    )
-    dispatcher.add_handler(
-        CommandHandler('closeparty', adm_close, Filters.chat(admin_chat_id))
-    )
-    dispatcher.add_handler(
-        CallbackQueryHandler(send_bill, pattern=r'^sendbill:\d+$')
-    )
-    dispatcher.add_handler(
-        CallbackQueryHandler(close_bill, pattern=r'^closebill:\d+$')
     )
     dispatcher.add_handler(user_conversation)
 
