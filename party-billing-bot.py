@@ -143,6 +143,8 @@ def decline_choice(update, context):
 
 
 def adm_total(update, context):
+    logger.debug(f'Enter adm_total: {update=}')
+
     guests = context.bot_data['party']['guests']
     total = 0
     for user_id, guest in guests.items():
@@ -173,9 +175,12 @@ def adm_total(update, context):
         reply_markup = InlineKeyboardMarkup(keyboard)
         update.message.reply_text(text, reply_markup=reply_markup)
     update.message.reply_text(f'Общая сумма за вечер: {total}руб.')
+    return ConversationStatus.ADM_COMMANDS
 
 
 def adm_close(update, context):
+    logger.debug(f'Enter adm_close: {update=}')
+
     context.bot_data['party']['status'] = 'closed'
     guests = context.bot_data['party']['guests']
     total = 0
@@ -206,11 +211,46 @@ def adm_close(update, context):
                                       callback_data=f'closebill:{user_id}')],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.reply_text(text, reply_markup=reply_markup)
-    update.message.reply_text(f'Общая сумма за вечер: {total}руб.')
+        context.bot.send_message(chat_id=update.effective_chat.id, text=text,
+                                 reply_markup=reply_markup)
+    context.bot.send_message(chat_id=update.effective_chat.id,
+                             text=f'Общая сумма за вечер: {total}руб.')
+    return ConversationStatus.ADM_COMMANDS
 
 
-def send_bill(update, context):
+def adm_start_party(update, context):
+    context.bot_data['party']['status'] = 'in progress'
+    context.bot.send_message(chat_id=update.effective_chat.id,
+                             text='Все счета удалены, вечеринка запущена.')
+    return ConversationStatus.ADM_COMMANDS
+
+
+def adm_party_info(update, context):
+    logger.debug(f'Enter adm_party: {update=}')
+    date = context.bot_data['party']['date']
+    place = context.bot_data['party']['place']
+    status = context.bot_data['party']['status']
+    text = 'Информация о текущей вечеринке:\n' \
+           f'Дата вечеринки: {date}\n' \
+           f'Место вечеринки (в): {place}\n' \
+           f'Статус вечеринки: {status}'
+    keyboard = [
+        [InlineKeyboardButton('Изменить дату вечеринки',
+                              callback_data='change_party_date')],
+        [InlineKeyboardButton('Изменить место вечеринки',
+                              callback_data='change_party_place')],
+        [InlineKeyboardButton('Закрыть вечеринку',
+                              callback_data='close_party')]
+        if status == 'in progress' else
+        [InlineKeyboardButton('Начать вечеринку',
+                              callback_data='start_party')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text(text, reply_markup=reply_markup)
+    return ConversationStatus.ADM_COMMANDS
+
+
+def adm_send_bill(update, context):
     user_id = int(update.callback_query.data.split(':')[1])
     guest = context.bot_data['party']['guests'][user_id]
     guest['bill_sent'] = True
@@ -218,15 +258,17 @@ def send_bill(update, context):
                   update.callback_query.message.text)
     context.bot.send_message(chat_id=user_id, text=text)
     update.callback_query.edit_message_text(text)
+    return ConversationStatus.ADM_COMMANDS
 
 
-def close_bill(update, context):
+def adm_close_bill(update, context):
     user_id = int(update.callback_query.data.split(':')[1])
     guest = context.bot_data['party']['guests'][user_id]
     guest['bill_payd'] = True
     text = re.sub(r'не оплачен', r'оплачен',
                   update.callback_query.message.text)
     update.callback_query.edit_message_text(text, reply_markup=None)
+    return ConversationStatus.ADM_COMMANDS
 
 
 if __name__ == '__main__':
@@ -270,8 +312,13 @@ if __name__ == '__main__':
                                Filters.chat(admin_chat_id)),
                 CommandHandler('closeparty', adm_close,
                                Filters.chat(admin_chat_id)),
-                CallbackQueryHandler(send_bill, pattern=r'^sendbill:\d+$'),
-                CallbackQueryHandler(close_bill, pattern=r'^closebill:\d+$'),
+                CommandHandler('party', adm_party_info,
+                               Filters.chat(admin_chat_id)),
+                CallbackQueryHandler(adm_close, pattern=r'^close_party$'),
+                CallbackQueryHandler(adm_start_party, pattern=r'^start_party$'),
+                CallbackQueryHandler(adm_send_bill, pattern=r'^sendbill:\d+$'),
+                CallbackQueryHandler(adm_close_bill,
+                                     pattern=r'^closebill:\d+$'),
             ]
         },
         fallbacks=[],
