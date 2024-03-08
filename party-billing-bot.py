@@ -304,12 +304,13 @@ def main():
     dispatcher = updater.dispatcher
 
     dispatcher.bot_data['admin_chat_id'] = admin_chat_id
-    dispatcher.bot_data['party'] = {
-        'date': '09 Марта 2024г.',
-        'place': 'баре Freedom',
-        'status': 'in progress',
-        'guests': {},
-    }
+    if 'party' not in dispatcher.bot_data:
+        dispatcher.bot_data['party'] = {
+            'date': '09 Марта 2024г.',
+            'place': 'баре Freedom',
+            'status': 'in progress',
+            'guests': {},
+        }
     user_conversation = ConversationHandler(
         entry_points=[
             MessageHandler(Filters.chat(admin_chat_id), adm_help),
