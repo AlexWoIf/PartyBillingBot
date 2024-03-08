@@ -11,6 +11,7 @@ from telegram.ext import (CallbackQueryHandler, CommandHandler,
                           ConversationHandler, Filters, MessageHandler,
                           Updater)
 
+from logger_handlers import TelegramLogsHandler
 from persistence import RedisPersistence
 
 
@@ -224,6 +225,7 @@ def adm_close(update, context):
 
 def adm_start_party(update, context):
     context.bot_data['party']['status'] = 'in progress'
+    context.bot_data['party']['guests'] = {}
     context.bot.send_message(chat_id=update.effective_chat.id,
                              text='Все счета удалены, вечеринка запущена.')
     return ConversationStatus.ADM_COMMANDS
@@ -275,12 +277,14 @@ def adm_close_bill(update, context):
     return ConversationStatus.ADM_COMMANDS
 
 
-if __name__ == '__main__':
+def main():
     load_dotenv(override=True)
     tg_token = os.getenv('TELEGRAM_BOT_TOKEN')
+    admin_chat_id = int(os.getenv('TG_ADMIN_CHAT'))
     loglevel = os.getenv('LOG_LEVEL', default='INFO')
     logging.basicConfig(level=loglevel,
                         format="%(asctime)s %(levelname)s %(message)s", )
+    logger.addHandler(TelegramLogsHandler(tg_token, admin_chat_id))
     logger.debug('Start logging')
 
     redis_host = os.getenv('REDIS_HOST')
@@ -293,12 +297,12 @@ if __name__ == '__main__':
         redis_storage.ping()
         persistence = RedisPersistence(redis_storage)
     except redis.ConnectionError:
+        logger.warning('Redis not available. Run without persistence.')
         persistence = False
 
     updater = Updater(tg_token, persistence=persistence)
     dispatcher = updater.dispatcher
 
-    admin_chat_id = int(os.getenv('TG_ADMIN_CHAT'))
     dispatcher.bot_data['admin_chat_id'] = admin_chat_id
     dispatcher.bot_data['party'] = {
         'date': '09 Марта 2024г.',
@@ -345,3 +349,10 @@ if __name__ == '__main__':
 
     updater.start_polling()
     updater.idle()
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as error:
+        logger.error({'Error': error, 'Traceback': traceback.format_exc()})
