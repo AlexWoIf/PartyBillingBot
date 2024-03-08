@@ -263,8 +263,15 @@ def adm_send_bill(update, context):
     guest['bill_sent'] = True
     text = re.sub(r'не отправлен', r'отправлен',
                   update.callback_query.message.text)
+    keyboard = [
+        [InlineKeyboardButton('✉ Отправить счет 🧾',
+                                callback_data=f'sendbill:{user_id}')],
+        [InlineKeyboardButton('✅ Отметить оплату 💰',
+                                callback_data=f'closebill:{user_id}')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     context.bot.send_message(chat_id=user_id, text=text)
-    update.callback_query.edit_message_text(text)
+    update.callback_query.edit_message_text(text, reply_markup=reply_markup)
     return ConversationStatus.ADM_COMMANDS
 
 
