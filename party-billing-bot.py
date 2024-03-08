@@ -22,8 +22,8 @@ class ConversationStatus(Enum):
 def help(update, context):
     logger.debug(f'Enter introduce: {update=}')
 
-    date = context.bot_data['party']['data'].get('date', '')
-    place = context.bot_data['party']['data'].get('place', '')
+    date = context.bot_data['party'].get('date', '')
+    place = context.bot_data['party'].get('place', '')
     text = 'Привет!\n' \
            'Я учитываю заказы нашей компании на вечеринке ' \
            f'{date} в {place}\nЕсли ты участник этой вечеринки, то пришли ' \
@@ -45,8 +45,8 @@ def start(update, context):
                        'bill_payd': False,
                        'orders': [], }
 
-    date = context.bot_data['party']['data'].get('date', '')
-    place = context.bot_data['party']['data'].get('place', '')
+    date = context.bot_data['party'].get('date', '')
+    place = context.bot_data['party'].get('place', '')
     text = 'Отлично, что ты решил к нам присоединиться!\n' \
            f'Я учитываю заказы нашей компании {date} в {place}\n' \
            'Присылай мне сообщение каждый раз, когда ты делаешь заказ, и в ' \
@@ -159,6 +159,41 @@ def adm_total(update, context):
     update.message.reply_text(f'Общая сумма за вечер: {total}руб.')
 
 
+def adm_close(update, context):
+    context.bot_data['party']['status'] = 'closed'
+    guests = context.bot_data['party']['guests']
+    total = 0
+    for user_id, guest in guests.items():
+        text = ''
+        username, firstname, lastname = guest['name']
+        summary_name = f'{firstname} ' if firstname else ''
+        summary_name += f'{lastname}' if lastname else ''
+        summary_name += f'(@{username})' if username else ''
+        text += f'Гость {summary_name}:\n'
+        items = guest['orders']
+        subtotal = 0
+        for (item, cost) in items:
+            text += f'\t{item} - {cost}руб.\n'
+            subtotal += cost
+        text += f'User total: {subtotal}руб.\n'
+        total += subtotal
+        negate_payd = '' if guest['bill_payd'] else 'не '
+        text += f'Счет {negate_payd}оплачен.\n'
+        reply_markup = None
+        if not guest['bill_payd']:
+            text += 'Счет отправлен.\n'
+            context.bot.send_message(chat_id=user_id, text=text)
+            keyboard = [
+                [InlineKeyboardButton('✉ Отправить счет 🧾',
+                                      callback_data=f'sendbill:{user_id}')],
+                [InlineKeyboardButton('✅ Отметить оплату 💰',
+                                      callback_data=f'closebill:{user_id}')],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+        update.message.reply_text(text, reply_markup=reply_markup)
+    update.message.reply_text(f'Общая сумма за вечер: {total}руб.')
+
+
 def send_bill(update, context):
     user_id = int(update.callback_query.data.split(':')[1])
     guest = context.bot_data['party']['guests'][user_id]
@@ -190,11 +225,9 @@ if __name__ == '__main__':
     admin_chat_id = int(os.getenv('TG_ADMIN_CHAT'))
     dispatcher.bot_data['admin_chat_id'] = admin_chat_id
     dispatcher.bot_data['party'] = {
-        'data': {
-            'date': '09 Марта 2024г.',
-            'place': 'баре Freedom',
-            'status': 'in progress'
-        },
+        'date': '09 Марта 2024г.',
+        'place': 'баре Freedom',
+        'status': 'in progress',
         'guests': {},
     }
     user_conversation = ConversationHandler(
@@ -218,6 +251,9 @@ if __name__ == '__main__':
     )
     dispatcher.add_handler(
         CommandHandler('total', adm_total, Filters.chat(admin_chat_id))
+    )
+    dispatcher.add_handler(
+        CommandHandler('closeparty', adm_close, Filters.chat(admin_chat_id))
     )
     dispatcher.add_handler(
         CallbackQueryHandler(send_bill, pattern=r'^sendbill:\d+$')
