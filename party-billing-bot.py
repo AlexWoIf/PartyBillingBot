@@ -3,12 +3,16 @@ import os
 import re
 from enum import Enum
 
+import redis
 from dotenv import load_dotenv
 from telegram import (InlineKeyboardButton, InlineKeyboardMarkup,
                       ReplyKeyboardMarkup, ReplyKeyboardRemove)
 from telegram.ext import (CallbackQueryHandler, CommandHandler,
                           ConversationHandler, Filters, MessageHandler,
                           Updater)
+
+from persistence import RedisPersistence
+
 
 logger = logging.getLogger(__file__)
 
@@ -279,7 +283,14 @@ if __name__ == '__main__':
                         format="%(asctime)s %(levelname)s %(message)s", )
     logger.debug('Start logging')
 
-    updater = Updater(tg_token)
+    redis_host = os.getenv('REDIS_HOST')
+    redis_port = os.getenv('REDIS_PORT')
+    redis_password = os.getenv('REDIS_PASSWORD')
+    redis_storage = redis.Redis(host=redis_host, port=redis_port,
+                                password=redis_password)
+    persistence = RedisPersistence(redis_storage)
+
+    updater = Updater(tg_token, persistence=persistence)
     dispatcher = updater.dispatcher
 
     admin_chat_id = int(os.getenv('TG_ADMIN_CHAT'))
@@ -323,7 +334,7 @@ if __name__ == '__main__':
         },
         fallbacks=[],
         name='party_billing_conversation',
-        # persistent=True,
+        persistent=True,
     )
     dispatcher.add_handler(user_conversation)
 
