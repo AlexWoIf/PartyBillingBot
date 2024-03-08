@@ -57,6 +57,28 @@ def get_user_bill(update, context, user_id):
     return subtotal
 
 
+def send_user_bill(update, context, user_id):
+    guest = context.bot_data['party']['guests'][user_id]
+    text = ''
+    username, firstname, lastname = guest['name']
+    summary_name = f'{firstname} ' if firstname else ''
+    summary_name += f'{lastname}' if lastname else ''
+    summary_name += f'(@{username})' if username else ''
+    text += f'Гость {summary_name}:\n'
+    items = guest['orders']
+    subtotal = 0
+    for (item, cost) in items:
+        text += f'\t{item} - {cost}руб.\n'
+        subtotal += cost
+    text += f'User total: {subtotal}руб.\n'
+    negate_payd = '' if guest['bill_payd'] else 'не '
+    text += f'Счет {negate_payd}оплачен.\n'
+    if not guest['bill_payd']:
+        negate_sent = '' if guest['bill_sent'] else 'не '
+        text += f'Счет {negate_sent}отправлен.\n'
+    context.bot.send_message(chat_id=user_id, text=text, )
+
+
 def help(update, context):
     logger.debug(f'Enter help: {update=}')
 
@@ -214,6 +236,20 @@ def adm_debtors(update, context):
     return ConversationStatus.ADM_COMMANDS
 
 
+def adm_sendbills(update, context):
+    logger.debug(f'Enter adm_debtors: {update=}')
+
+    guests = context.bot_data['party']['guests']
+    total = 0
+    for user_id, guest in guests.items():
+        if not guest['bill_payd']:
+            total += 1
+            send_user_bill(update, context, user_id)
+    context.bot.send_message(chat_id=update.effective_chat.id,
+                             text=f'Отправлено {total} неоплаченных счетов.')
+    return ConversationStatus.ADM_COMMANDS
+
+
 def adm_close(update, context):
     logger.debug(f'Enter adm_close: {update=}')
 
@@ -246,9 +282,9 @@ def adm_party_info(update, context):
            f'Место вечеринки (в): {place}\n' \
            f'Статус вечеринки: {status}'
     keyboard = [
-        [InlineKeyboardButton('Изменить дату вечеринки',
+        [InlineKeyboardButton('Изменить дату вечеринки (не работает)',
                               callback_data='change_party_date')],
-        [InlineKeyboardButton('Изменить место вечеринки',
+        [InlineKeyboardButton('Изменить место вечеринки (не работает)',
                               callback_data='change_party_place')],
         [InlineKeyboardButton('Закрыть вечеринку',
                               callback_data='close_party')]
@@ -290,6 +326,11 @@ def adm_close_bill(update, context):
                   update.callback_query.message.text)
     update.callback_query.edit_message_text(text, reply_markup=None)
     return ConversationStatus.ADM_COMMANDS
+
+
+def error_handler(update, context):
+    logger.error(msg="Исключение при обработке сообщения:",
+                 exc_info=context.error)
 
 
 def main():
@@ -348,6 +389,8 @@ def main():
                                Filters.chat(admin_chat_id)),
                 CommandHandler('debtors', adm_debtors,
                                Filters.chat(admin_chat_id)),
+                CommandHandler('sendbills', adm_sendbills,
+                               Filters.chat(admin_chat_id)),
                 CommandHandler('closeparty', adm_close,
                                Filters.chat(admin_chat_id)),
                 CommandHandler('party', adm_party_info,
@@ -366,6 +409,8 @@ def main():
         persistent=persistence,
     )
     dispatcher.add_handler(user_conversation)
+
+    dispatcher.add_error_handler(error_handler)
 
     updater.start_polling()
     updater.idle()
