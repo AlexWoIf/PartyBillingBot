@@ -168,16 +168,17 @@ def adm_total(update, context):
         total += subtotal
         negate_payd = '' if guest['bill_payd'] else 'не '
         text += f'Счет {negate_payd}оплачен.\n'
+        reply_markup = None
         if not guest['bill_payd']:
             negate_sent = '' if guest['bill_sent'] else 'не '
             text += f'Счет {negate_sent}отправлен.\n'
-        keyboard = [
-            [InlineKeyboardButton('✉ Отправить счет 🧾',
-                                  callback_data=f'sendbill:{user_id}')],
-            [InlineKeyboardButton('✅ Отметить оплату 💰',
-                                  callback_data=f'closebill:{user_id}')],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+            keyboard = [
+                [InlineKeyboardButton('✉ Отправить счет 🧾',
+                                    callback_data=f'sendbill:{user_id}')],
+                [InlineKeyboardButton('✅ Отметить оплату 💰',
+                                    callback_data=f'closebill:{user_id}')],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
         update.message.reply_text(text, reply_markup=reply_markup)
     update.message.reply_text(f'Общая сумма за вечер: {total}руб.')
     return ConversationStatus.ADM_COMMANDS
@@ -304,7 +305,7 @@ def main():
     dispatcher = updater.dispatcher
 
     dispatcher.bot_data['admin_chat_id'] = admin_chat_id
-    if 'party' not in dispatcher.bot_data:
+    if 'party' not Lf dblyj ,eltin dispatcher.bot_data:
         dispatcher.bot_data['party'] = {
             'date': '09 Марта 2024г.',
             'place': 'баре Freedom',
