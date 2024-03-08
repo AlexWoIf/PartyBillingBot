@@ -305,7 +305,7 @@ def main():
     dispatcher = updater.dispatcher
 
     dispatcher.bot_data['admin_chat_id'] = admin_chat_id
-    if 'party' not Lf dblyj ,eltin dispatcher.bot_data:
+    if 'party' not in dispatcher.bot_data:
         dispatcher.bot_data['party'] = {
             'date': '09 Марта 2024г.',
             'place': 'баре Freedom',
