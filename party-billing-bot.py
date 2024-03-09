@@ -218,6 +218,12 @@ def decline_choice(update, context):
     return ConversationStatus.GET_ITEM
 
 
+def forward_document(update, context):
+    logger.debug(f'Enter forward_document: {update=}')
+
+    update.message.forward(context.bot_data['admin_chat_id'])
+
+
 def adm_total(update, context):
     logger.debug(f'Enter adm_total: {update=}')
 
@@ -404,6 +410,10 @@ def main():
         persistent=persistence,
     )
     dispatcher.add_handler(user_conversation)
+    dispatcher.add_handler(
+        MessageHandler(~Filters.chat(admin_chat_id) & Filters.document,
+                       forward_document)
+    )
 
     dispatcher.add_error_handler(error_handler)
 
