@@ -76,12 +76,11 @@ def send_user_bill(update, context, user_id):
             'Тинькофф)\nПосле оплаты чек из банковского приложения отправь ' \
             'сюда боту.\nОбычно приложение отправляет чек в формате PDF, но ' \
             'если ты захочешь отправить скриншот экрана, то отправляй ' \
-            'картинку БЕЗ сжатия.'
+            'картинку БЕЗ сжатия.\n'
     negate_payd = '' if guest['bill_payd'] else 'не '
     text += f'Счет {negate_payd}оплачен.\n'
-    if not guest['bill_payd']:
-        negate_sent = '' if guest['bill_sent'] else 'не '
-        text += f'Счет {negate_sent}отправлен.\n'
+    guest['bill_sent'] = True
+    text += 'Счет отправлен.\n'
     context.bot.send_message(chat_id=user_id, text=text, )
 
 
