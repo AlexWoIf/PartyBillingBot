@@ -72,8 +72,8 @@ def send_user_bill(update, context, user_id):
         text += f'\t{item} - {cost}руб.\n'
         subtotal += cost
     text += f'User total: {subtotal}руб.\n'
-    text += 'Счет можно оплатить переводом на номер 89110327182 (Сбер или ' \
-            'Тинькофф)'
+    text += 'Счет оплачивать переводом на номер 89110327182 (Сбер или ' \
+            'Тинькофф)\n'
     negate_payd = '' if guest['bill_payd'] else 'не '
     text += f'Счет {negate_payd}оплачен.\n'
     if not guest['bill_payd']:
