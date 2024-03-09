@@ -300,21 +300,8 @@ def adm_party_info(update, context):
 
 def adm_send_bill(update, context):
     user_id = int(update.callback_query.data.split(':')[1])
-    guest = context.bot_data['party']['guests'][user_id]
-    guest['bill_sent'] = True
-    text = re.sub(r'не отправлен', r'отправлен',
-                  update.callback_query.message.text)
-    keyboard = [
-        [InlineKeyboardButton('✉ Отправить счет 🧾',
-                              callback_data=f'sendbill:{user_id}')],
-        [InlineKeyboardButton('✅ Отметить оплату 💰',
-                              callback_data=f'closebill:{user_id}')],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.callback_query.edit_message_text(text, reply_markup=reply_markup)
-
-    context.bot.send_message(chat_id=user_id, text=text)
-
+    send_user_bill(update, context, user_id)
+    get_user_bill(update, context, user_id)
     return ConversationStatus.ADM_COMMANDS
 
 
