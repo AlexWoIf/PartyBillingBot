@@ -73,7 +73,10 @@ def send_user_bill(update, context, user_id):
         subtotal += cost
     text += f'User total: {subtotal}руб.\n'
     text += 'Счет оплачивать переводом на номер 89110327182 (Сбер или ' \
-            'Тинькофф)\n'
+            'Тинькофф)\nПосле оплаты чек из банковского приложения отправь ' \
+            'сюда боту.\nОбычно приложение отправляет чек в формате PDF, но ' \
+            'если ты захочешь отправить скриншот экрана, то отправляй ' \
+            'картинку БЕЗ сжатия.'
     negate_payd = '' if guest['bill_payd'] else 'не '
     text += f'Счет {negate_payd}оплачен.\n'
     if not guest['bill_payd']:
@@ -123,7 +126,7 @@ def start(update, context):
         guests[user_id] = {'name': (username, firstname, lastname),
                            'bill_sent': False,
                            'bill_payd': False,
-                           'orders': [], }
+                           'orders': [('Бронирование', 300)], }
 
     date = context.bot_data['party'].get('date', '')
     place = context.bot_data['party'].get('place', '')
