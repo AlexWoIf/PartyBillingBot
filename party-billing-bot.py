@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import traceback
 from enum import Enum
 
 import redis
@@ -47,9 +48,9 @@ def get_user_bill(update, context, user_id):
         text += f'Счет {negate_sent}отправлен.\n'
         keyboard = [
             [InlineKeyboardButton('✉ Отправить счет 🧾',
-                                    callback_data=f'sendbill:{user_id}')],
+                                  callback_data=f'sendbill:{user_id}')],
             [InlineKeyboardButton('✅ Отметить оплату 💰',
-                                    callback_data=f'closebill:{user_id}')],
+                                  callback_data=f'closebill:{user_id}')],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
@@ -71,6 +72,8 @@ def send_user_bill(update, context, user_id):
         text += f'\t{item} - {cost}руб.\n'
         subtotal += cost
     text += f'User total: {subtotal}руб.\n'
+    text += 'Счет можно оплатить переводом на номер 89110327182 (Сбер или ' \
+            'Тинькофф)'
     negate_payd = '' if guest['bill_payd'] else 'не '
     text += f'Счет {negate_payd}оплачен.\n'
     if not guest['bill_payd']:
@@ -124,11 +127,15 @@ def start(update, context):
 
     date = context.bot_data['party'].get('date', '')
     place = context.bot_data['party'].get('place', '')
-    text = 'Отлично, что ты решил к нам присоединиться!\n' \
-           f'Я учитываю заказы нашей компании {date} в {place}\n' \
-           'Присылай мне сообщение каждый раз, когда ты делаешь заказ, и в ' \
-           'конце вечера я пришлю тебе твой счет.\n' \
-           'Напиши мне примерное название того что ты хочешь заказать:'
+    text = f'Всем привет!\nЖдем вас на вечеринке {date} в {place}.\n' \
+           'Это демо версия бота для учета заказов, пожалуйста, не серчайте ' \
+           'за баги).\nОн отправляет ваш заказ официанту и суммирует его '\
+           'общую стоимость после чего под конец вечера вам будет выставлен ' \
+           'счет.\nПри достижении суммы депозита наш бот прекратит свою '\
+           'работу и заказы будут приниматься только за баром.\n' \
+           'Напишите через запятую наименование позиций, ' \
+           'которые вы хотите заказать:'
+
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                              reply_markup=ReplyKeyboardRemove(), )
     return ConversationStatus.GET_ITEM
@@ -139,8 +146,8 @@ def get_item(update, context):
 
     item = update.message.text
     context.user_data['item'] = item
-    text = f'Ты заказал:\n{item}\nНапиши стоимость, ' \
-           'чтобы мы потом правильно разделили итоговый счет на всех.'
+    text = f'Ты заказал(а):\n{item}\nТеперь напиши общуюсь стоимость всех ' \
+           'позиций. Отменить заказ или исправить можно после следующего шага.'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text)
     return ConversationStatus.GET_COST
 
@@ -155,9 +162,9 @@ def get_cost(update, context):
     item = context.user_data['item']
     cost = update.message.text
     context.user_data['cost'] = int(cost)
-    text = f'Давай проверим:\nТы заказал: {item}\nСтоимость:\n{cost}руб.\n' \
-           'Нажми "Да", если все верно, или "Нет", если хочешь прислать ' \
-           'заказ заново'
+    text = f'Давай проверим:\nТы заказал(а):\n{item}\nСтоимостью:\n' \
+           f'{cost}руб.\n Нажми "Да", если все верно, или "Нет", если ' \
+           'хочешь исправить или отменить заказ.'
     keyboard = [['Да', 'Нет'],]
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True)
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
@@ -169,18 +176,18 @@ def confirm_choice(update, context):
     logger.debug(f'Enter confirm_choice: {update=}')
 
     if context.bot_data['party']['status'] == 'closed':
-        text = 'К сожалению, вечеринка закончилась и новые заказы не ' \
-               'принимаются. Дождись новой вечеринки и нажми /start чтобы ' \
-               'подключиться к ней.'
+        text = 'Бот завершил работу, новые заказы будут принимать только за ' \
+               'стойкой бара'
         context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                                  reply_markup=ReplyKeyboardRemove(), )
         return ConversationHandler.END
 
     cost = context.user_data['cost']
     item = context.user_data['item']
-    text = f'Спасибо, что ты заказал:\n{item}\nСтоимость:\n{cost}\n' \
-           'Я записал заказ в общий список и учту его при разделе счета.\n' \
-           'Если захочешь добавить что-то еще, то опять присылай название.'
+    text = f'Спасибо, что ты заказал:\n{item}\nСтоимостью:\n{cost}\n' \
+           'Спуститесь за заказом через 5 минут (горячие блюда могут ' \
+           'готовится дольше).\nЧтобы сделать новый заказ снова пришлите ' \
+           'наименование позиций.'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                              reply_markup=ReplyKeyboardRemove(), )
     user_id = update.message.from_user.id
@@ -205,7 +212,7 @@ def confirm_choice(update, context):
 def decline_choice(update, context):
     logger.debug(f'Enter decline_choice: {update=}')
 
-    text = 'Ок. Отменяем. Попробуй ввести название заново.'
+    text = 'Отмена. Чтобы сделать заказ снова пришлите наименование позиций.'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                              reply_markup=ReplyKeyboardRemove(), )
     return ConversationStatus.GET_ITEM
@@ -383,7 +390,8 @@ def main():
                 CommandHandler('party', adm_party_info,
                                Filters.chat(admin_chat_id)),
                 CallbackQueryHandler(adm_close, pattern=r'^close_party$'),
-                CallbackQueryHandler(adm_start_party, pattern=r'^start_party$'),
+                CallbackQueryHandler(adm_start_party,
+                                     pattern=r'^start_party$'),
                 CallbackQueryHandler(adm_send_bill, pattern=r'^sendbill:\d+$'),
                 CallbackQueryHandler(adm_close_bill,
                                      pattern=r'^closebill:\d+$'),
